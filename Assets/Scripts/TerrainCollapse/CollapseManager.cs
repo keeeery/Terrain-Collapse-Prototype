@@ -14,6 +14,7 @@ namespace TerrainCollapsePrototype
         [SerializeField] private TerrainManager terrainManager;
         [SerializeField] private TerrainSampler terrainSampler;
         [SerializeField] private float gravityScale = 2f;
+        [SerializeField] private float chunkMass = 100f;
         private readonly List<FallingChunk> activeChunks = new();
         private bool rebuilding;
 
@@ -46,7 +47,10 @@ namespace TerrainCollapsePrototype
             Rigidbody2D body = tileObject.GetComponent<Rigidbody2D>();
             body.bodyType = RigidbodyType2D.Dynamic;
             body.gravityScale = gravityScale;
-            body.freezeRotation = true;
+            body.mass = chunkMass;
+            // 포팅 전까지 Player 충돌로 복원 위치가 바뀌지 않도록 수직 낙하만 허용한다.
+            // 큰 질량은 아래에서 Player가 점프로 밀어 올리는 영향도 최소화한다.
+            body.constraints = RigidbodyConstraints2D.FreezePositionX | RigidbodyConstraints2D.FreezeRotation;
             body.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
             TilemapCollider2D collider = tileObject.GetComponent<TilemapCollider2D>();
             collider.compositeOperation = Collider2D.CompositeOperation.Merge;
