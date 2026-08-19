@@ -32,21 +32,129 @@ namespace TerrainCollapsePrototype
             {
                 Bounds bounds = chunk.WorldBounds;
                 lastBounds.Add(bounds);
-                Vector3Int min = targetTilemap.WorldToCell(bounds.min);
-                Vector3Int max = targetTilemap.WorldToCell(bounds.max);
-                // Bounds 안의 각 셀 중심이 실제 Chunk 형상 내부에 있을 때만 타일을 생성한다.
-                for (int y = min.y; y <= max.y; y++)
-                for (int x = min.x; x <= max.x; x++)
-                {
-                    var cell = new Vector3Int(x, y, 0);
-                    Vector3 center = targetTilemap.GetCellCenterWorld(cell);
-                    lastCenters.Add(center);
-                    // 기존 고정 지형은 덮어쓰지 않아 Chunk와 지형이 겹쳐도 데이터가 손실되지 않는다.
-                    if (!targetTilemap.HasTile(cell) && chunk.ShapeCollider.OverlapPoint(center))
-                        targetTilemap.SetTile(cell, terrainTile);
-                }
+                RebuildConnectedChunk(chunk, bounds);
             }
             targetTilemap.RefreshAllTiles();
+        }
+
+        /// <summary>
+        /// 셀을 각각 복원하면 경계에 걸친 Chunk가 조각난 형태로 양자화될 수 있다.
+        /// 원래 로컬 타일 형태를 유지한 채 Cell Center 적중률이 가장 높은 정수 배치를 선택한다.
+        /// </summary>
+        private void RebuildConnectedChunk(FallingChunk chunk, Bounds bounds)
+        {
+            List<Vector3Int> localCells = GetOccupiedCells(chunk.ChunkTilemap);
+            if (localCells.Count == 0) return;
+
+            var searchPadding = new Vector3Int(1, 1, 0);
+            Vector3Int worldMin = targetTilemap.WorldToCell(bounds.min) - searchPadding;
+            Vector3Int worldMax = targetTilemap.WorldToCell(bounds.max) + searchPadding;
+            Vector3Int localMin = localCells[0];
+            Vector3Int localMax = localCells[0];
+            foreach (Vector3Int cell in localCells)
+            {
+                localMin = Vector3Int.Min(localMin, cell);
+                localMax = Vector3Int.Max(localMax, cell);
+            }
+
+            Vector3Int bestOffset = Vector3Int.zero;
+            int bestHitCount = -1;
+            int bestConnectionCount = -1;
+            int bestCollisionCount = int.MaxValue;
+            int bestPlacementClass = -1;
+            float bestAlignmentError = float.PositiveInfinity;
+
+            // 가능한 Grid 평행 이동을 모두 Cell Center로 검사한다. Rigidbody 위치 반올림은 사용하지 않는다.
+            for (int offsetY = worldMin.y - localMin.y; offsetY <= worldMax.y - localMax.y; offsetY++)
+            for (int offsetX = worldMin.x - localMin.x; offsetX <= worldMax.x - localMax.x; offsetX++)
+            {
+                var offset = new Vector3Int(offsetX, offsetY, 0);
+                int hitCount = 0;
+                int connectionCount = 0;
+                int collisionCount = 0;
+                float alignmentError = 0f;
+
+                foreach (Vector3Int localCell in localCells)
+                {
+                    Vector3Int targetCell = localCell + offset;
+                    Vector3 center = targetTilemap.GetCellCenterWorld(targetCell);
+                    if (chunk.ShapeCollider.OverlapPoint(center)) hitCount++;
+                    if (targetTilemap.HasTile(targetCell)) collisionCount++;
+                    connectionCount += CountExistingNeighbours(targetCell);
+
+                    // 현재 다각형 Chunk의 실제 타일 중심과 후보 Grid 중심의 거리 오차이다.
+                    // 이 값이 작을수록 물리 낙하 위치를 좌우로 왜곡하지 않은 배치다.
+                    Vector3 physicalCenter = chunk.ChunkTilemap.GetCellCenterWorld(localCell);
+                    alignmentError += (physicalCenter - center).sqrMagnitude;
+                }
+                alignmentError /= localCells.Count;
+
+                // 1: 기존 타일과 겹치지 않음, 0: 기존 타일과 겹침.
+                // '기존 지형에 연결됨'을 상위 등급으로 두면 꼭짓점 접촉 상태를 옆 칸으로 강제 이동시킨다.
+                // 연결 여부는 마지막 동률 판정에서만 사용하고 실제 물리 위치를 우선한다.
+                int placementClass = collisionCount == 0 ? 1 : 0;
+                if (!IsBetterPlacement(
+                        placementClass, hitCount, alignmentError, connectionCount, collisionCount,
+                        bestPlacementClass, bestHitCount, bestAlignmentError, bestConnectionCount,
+                        bestCollisionCount))
+                    continue;
+                bestOffset = offset;
+                bestHitCount = hitCount;
+                bestConnectionCount = connectionCount;
+                bestCollisionCount = collisionCount;
+                bestPlacementClass = placementClass;
+                bestAlignmentError = alignmentError;
+            }
+
+            // 선택한 배치의 검사점을 Gizmo에 기록하고, 원래 연결 형태 전체를 복원한다.
+            foreach (Vector3Int localCell in localCells)
+            {
+                Vector3Int targetCell = localCell + bestOffset;
+                lastCenters.Add(targetTilemap.GetCellCenterWorld(targetCell));
+                if (!targetTilemap.HasTile(targetCell)) targetTilemap.SetTile(targetCell, terrainTile);
+            }
+
+            Debug.Log($"[Terrain Collapse] Chunk grid placement: hits={bestHitCount}/{localCells.Count}, " +
+                      $"connections={bestConnectionCount}, overlaps={bestCollisionCount}, " +
+                      $"class={bestPlacementClass}, alignmentError={bestAlignmentError:F4}, offset={bestOffset}");
+        }
+
+        private static bool IsBetterPlacement(
+            int placementClass,
+            int hitCount,
+            float alignmentError,
+            int connectionCount,
+            int collisionCount,
+            int bestPlacementClass,
+            int bestHitCount,
+            float bestAlignmentError,
+            int bestConnectionCount,
+            int bestCollisionCount)
+        {
+            if (placementClass != bestPlacementClass) return placementClass > bestPlacementClass;
+            if (hitCount != bestHitCount) return hitCount > bestHitCount;
+            if (!Mathf.Approximately(alignmentError, bestAlignmentError))
+                return alignmentError < bestAlignmentError;
+            if (connectionCount != bestConnectionCount) return connectionCount > bestConnectionCount;
+            return collisionCount < bestCollisionCount;
+        }
+
+        private static List<Vector3Int> GetOccupiedCells(Tilemap tilemap)
+        {
+            var cells = new List<Vector3Int>();
+            foreach (Vector3Int cell in tilemap.cellBounds.allPositionsWithin)
+                if (tilemap.HasTile(cell)) cells.Add(cell);
+            return cells;
+        }
+
+        private int CountExistingNeighbours(Vector3Int cell)
+        {
+            int count = 0;
+            if (targetTilemap.HasTile(cell + Vector3Int.up)) count++;
+            if (targetTilemap.HasTile(cell + Vector3Int.down)) count++;
+            if (targetTilemap.HasTile(cell + Vector3Int.left)) count++;
+            if (targetTilemap.HasTile(cell + Vector3Int.right)) count++;
+            return count;
         }
 
         private void OnDrawGizmos()

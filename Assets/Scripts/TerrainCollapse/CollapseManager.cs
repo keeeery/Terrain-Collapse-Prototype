@@ -50,7 +50,10 @@ namespace TerrainCollapsePrototype
             body.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
             TilemapCollider2D collider = tileObject.GetComponent<TilemapCollider2D>();
             collider.compositeOperation = Collider2D.CompositeOperation.Merge;
-            tileObject.GetComponent<CompositeCollider2D>().geometryType = CompositeCollider2D.GeometryType.Polygons;
+            // 타일 덩어리의 Bounds 직사각형이 아니라 실제 외곽선을 합친 다각형 Collider를 사용한다.
+            // 오목한 형상은 Physics2D가 여러 convex polygon으로 내부 분할해 시뮬레이션한다.
+            CompositeCollider2D composite = tileObject.GetComponent<CompositeCollider2D>();
+            composite.geometryType = CompositeCollider2D.GeometryType.Polygons;
 
             // 이 순간부터 해당 셀의 실제 데이터는 원본 Tilemap이 아니라 Chunk가 소유한다.
             foreach (Vector3Int worldCell in cells)
@@ -61,7 +64,10 @@ namespace TerrainCollapsePrototype
             source.RefreshAllTiles();
             chunkMap.RefreshAllTiles();
             Physics2D.SyncTransforms();
-            activeChunks.Add(tileObject.GetComponent<FallingChunk>());
+            FallingChunk chunk = tileObject.GetComponent<FallingChunk>();
+            // 원본 Tilemap과 공유하던 꼭짓점 접촉을 잠시 해제해야 새 Dynamic Body가 실제로 낙하를 시작한다.
+            chunk.BeginInitialGroundSeparation(source.GetComponent<CompositeCollider2D>());
+            activeChunks.Add(chunk);
             Debug.Log($"[Terrain Collapse] Chunk Created: {cells.Count} tiles");
         }
 
