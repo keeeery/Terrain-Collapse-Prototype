@@ -17,6 +17,9 @@ public static class TerrainCollapsePrototypeSceneBuilder
     private const string GeneratedFolder = "Assets/TerrainCollapseGenerated";
     private const string TexturePath = GeneratedFolder + "/PrototypeTile.png";
     private const string TilePath = GeneratedFolder + "/PrototypeTile.asset";
+    private const int PerformanceMapWidth = 100;
+    private const int PerformanceMapDepth = 100;
+    private const int PerformanceMapMinimumY = -(PerformanceMapDepth - 1);
 
     /// <summary>빈 Scene을 만들고 프로토타입 전체 구성을 저장한다.</summary>
     [MenuItem("Tools/Prototype/Build Terrain Collapse Test Scene")]
@@ -42,7 +45,8 @@ public static class TerrainCollapsePrototypeSceneBuilder
         TerrainSampler sampler = new GameObject("TerrainSampler").AddComponent<TerrainSampler>();
         sampler.transform.SetParent(managers.transform);
 
-        terrainManager.Configure(ground, tile, collapseManager, camera);
+        // 최하단 행만 절대 기반이다. 그 위의 대형 지형도 연결이 끊기면 붕괴 대상으로 처리한다.
+        terrainManager.Configure(ground, tile, collapseManager, camera, PerformanceMapMinimumY);
         collapseManager.Configure(terrainManager, sampler);
         sampler.Configure(ground, tile);
         CreatePlayer(tile.sprite);
@@ -68,13 +72,24 @@ public static class TerrainCollapsePrototypeSceneBuilder
         body.bodyType = RigidbodyType2D.Static;
         TilemapCollider2D tileCollider = groundObject.GetComponent<TilemapCollider2D>();
         tileCollider.compositeOperation = Collider2D.CompositeOperation.Merge;
+        // 대량 편집 시 작은 변경을 지나치게 오래 누적하지 않고 전체 재생성과 비교할 기준값이다.
+        tileCollider.maximumTileChangeCount = 1024;
         CompositeCollider2D composite = groundObject.GetComponent<CompositeCollider2D>();
         composite.geometryType = CompositeCollider2D.GeometryType.Polygons;
 
         Tilemap map = groundObject.GetComponent<Tilemap>();
-        // 바닥 20칸, 상부 7x2칸, 중앙 지지대 2x3칸을 배치한다.
-        var cells = new List<Vector3Int>(40);
-        for (int x = -10; x < 10; x++) cells.Add(new Vector3Int(x, 0, 0));
+        // 성능 측정용 1024x64 밀집 지형 위에 기존 붕괴 테스트 구조를 유지한다.
+        // 크기를 더 키우려면 PerformanceMapWidth/Depth 상수만 변경하면 된다.
+        int denseTerrainTileCount = PerformanceMapWidth * PerformanceMapDepth;
+        const int collapseStructureTileCount = 20;
+        var cells = new List<Vector3Int>(denseTerrainTileCount + collapseStructureTileCount);
+        int minimumX = -PerformanceMapWidth / 2;
+        int maximumX = minimumX + PerformanceMapWidth;
+        for (int y = PerformanceMapMinimumY; y <= 0; y++)
+        for (int x = minimumX; x < maximumX; x++)
+            cells.Add(new Vector3Int(x, y, 0));
+
+        // 상부 플랫폼 7x2칸과 중앙 지지대 2x3칸은 화면 중앙에 생성한다.
         for (int y = 4; y <= 5; y++)
         for (int x = -4; x <= 2; x++) cells.Add(new Vector3Int(x, y, 0));
         for (int y = 1; y <= 3; y++)
@@ -87,9 +102,11 @@ public static class TerrainCollapsePrototypeSceneBuilder
         map.RefreshAllTiles();
         EditorUtility.SetDirty(map);
 
-        // 성공 로그 전에 직렬화 대상 Tilemap에 실제로 40개 셀이 들어갔는지 검증한다.
+        // 성공 로그 전에 직렬화 대상 Tilemap에 모든 셀이 실제로 들어갔는지 검증한다.
         if (map.GetUsedTilesCount() != 1 || CountOccupiedCells(map) != cells.Count)
             throw new InvalidDataException($"GroundTilemap 생성 검증 실패: 기대 {cells.Count}개 타일.");
+        Debug.Log($"[Terrain Collapse] Performance map created: {PerformanceMapWidth}x{PerformanceMapDepth}, " +
+                  $"total tiles={cells.Count:N0}");
         return map;
     }
 

@@ -27,13 +27,19 @@ namespace TerrainCollapsePrototype
         public Tilemap GroundTilemap => groundTilemap;
         public TileBase TerrainTile => terrainTile;
 
-        /// <summary>Scene Builder가 생성한 오브젝트 참조를 자동 연결한다.</summary>
-        public void Configure(Tilemap tilemap, TileBase tile, CollapseManager manager, Camera camera)
+        /// <summary>Scene Builder가 생성한 참조와 절대 기반으로 사용할 최하단 행을 연결한다.</summary>
+        public void Configure(
+            Tilemap tilemap,
+            TileBase tile,
+            CollapseManager manager,
+            Camera camera,
+            int foundationCellY)
         {
             groundTilemap = tilemap;
             terrainTile = tile;
             collapseManager = manager;
             inputCamera = camera;
+            supportCellY = foundationCellY;
         }
 
         private void OnEnable()
@@ -55,7 +61,9 @@ namespace TerrainCollapsePrototype
 
         private void OnRemoveTilePerformed(InputAction.CallbackContext _)
         {
-            if (collapseManager == null || collapseManager.IsCollapsing || groundTilemap == null ||
+            // 물리 Chunk가 낙하 중이어도 원본 Tilemap의 남은 타일은 계속 편집할 수 있다.
+            // Sampling이 Tilemap에 데이터를 다시 쓰는 짧은 구간만 동시 수정을 막는다.
+            if (collapseManager == null || collapseManager.IsRebuilding || groundTilemap == null ||
                 Pointer.current == null)
                 return;
 

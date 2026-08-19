@@ -18,7 +18,7 @@ namespace TerrainCollapsePrototype
         private readonly List<FallingChunk> activeChunks = new();
         private bool rebuilding;
 
-        public bool IsCollapsing => activeChunks.Count > 0 || rebuilding;
+        public bool IsRebuilding => rebuilding;
 
         /// <summary>Scene Builder에서 Manager 간 참조를 연결한다.</summary>
         public void Configure(TerrainManager terrain, TerrainSampler sampler)
