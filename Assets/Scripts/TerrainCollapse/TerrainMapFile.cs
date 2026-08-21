@@ -33,7 +33,9 @@ namespace TerrainCollapsePrototype
                 error = $"셀 수가 맞지 않습니다: 기대 {Width * Height}, 실제 {Tiles?.Count ?? 0}";
                 return false;
             }
+            
             error = string.Empty;
+            
             return true;
         }
 
@@ -51,7 +53,7 @@ namespace TerrainCollapsePrototype
         public static TerrainMapFile CreatePerformanceMap()
         {
             int height = PerformanceMapDepth + CollapseStructureHeight;
-            var map = new TerrainMapFile
+            TerrainMapFile map = new  TerrainMapFile
             {
                 Name = "TerrainCollapsePerformanceMap",
                 Width = PerformanceMapWidth,
@@ -61,21 +63,24 @@ namespace TerrainCollapsePrototype
                 FoundationCellY = 0,
                 Tiles = new List<TerrainTileType>(PerformanceMapWidth * height)
             };
+            
             for (int i = 0; i < map.Width * map.Height; i++)
                 map.Tiles.Add(TerrainTileType.Empty);
 
             for (int y = 0; y < PerformanceMapDepth; y++)
-            for (int x = 0; x < PerformanceMapWidth; x++)
-                map.SetTile(new Vector2Int(x, y), TerrainTileType.Ground);
+                for (int x = 0; x < PerformanceMapWidth; x++)
+                    map.SetTile(new Vector2Int(x, y), TerrainTileType.Ground);
 
             int centerOffsetX = PerformanceMapWidth / 2;
             int surfaceY = PerformanceMapDepth - 1;
+            
             for (int worldY = 4; worldY <= 5; worldY++)
-            for (int worldX = -4; worldX <= 2; worldX++)
-                map.SetTile(new Vector2Int(centerOffsetX + worldX, surfaceY + worldY), TerrainTileType.Ground);
+                for (int worldX = -4; worldX <= 2; worldX++)
+                    map.SetTile(new Vector2Int(centerOffsetX + worldX, surfaceY + worldY), TerrainTileType.Ground);
+            
             for (int worldY = 1; worldY <= 3; worldY++)
-            for (int worldX = -1; worldX <= 0; worldX++)
-                map.SetTile(new Vector2Int(centerOffsetX + worldX, surfaceY + worldY), TerrainTileType.Ground);
+                for (int worldX = -1; worldX <= 0; worldX++)
+                    map.SetTile(new Vector2Int(centerOffsetX + worldX, surfaceY + worldY), TerrainTileType.Ground);
 
             return map;
         }

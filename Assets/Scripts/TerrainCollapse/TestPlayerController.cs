@@ -5,7 +5,7 @@ namespace TerrainCollapsePrototype
 {
     /// <summary>Kinematic Rigidbody를 직접 이동시키는 붕괴 테스트용 플레이어.</summary>
     [RequireComponent(typeof(Rigidbody2D), typeof(BoxCollider2D), typeof(SpriteRenderer))]
-    public sealed class TestPlayerController : MonoBehaviour
+    public sealed class TestPlayerController : MonoBehaviour, IFallingTerrainEscapeTarget
     {
         [SerializeField] private float moveSpeed = 6f;
         [SerializeField] private float jumpSpeed = 8f;
@@ -78,23 +78,23 @@ namespace TerrainCollapsePrototype
         }
 
         /// <summary>위에서 내려오는 덩어리와 겹치지 않는 가장 가까운 좌우 위치로 밀어낸다.</summary>
-        public bool TryEscapeFromFallingChunk(FallingChunk chunk)
+        public bool TryEscapeFromFallingTerrain(Bounds terrainBounds, float terrainCellSize)
         {
-            if (chunk == null || Time.time - lastEscapeTime < Time.fixedDeltaTime) return false;
+            if (Time.time - lastEscapeTime < Time.fixedDeltaTime) return false;
             Bounds playerBounds = box.bounds;
-            Bounds chunkBounds = chunk.WorldBounds;
+            Bounds chunkBounds = terrainBounds;
             bool struckFromAbove = chunkBounds.center.y > playerBounds.center.y &&
                                    chunkBounds.min.y <= playerBounds.max.y + collisionSkin;
-            if (!struckFromAbove) return false;
+            if (struckFromAbove == false) return false;
 
-            float maximumDistance = chunk.CellSize * 0.5f;
+            float maximumDistance = terrainCellSize * 0.5f;
             int probeCount = Mathf.Max(1, Mathf.CeilToInt(maximumDistance / escapeProbeStep));
             for (int probe = 1; probe <= probeCount; probe++)
             {
                 float distance = Mathf.Min(probe * escapeProbeStep, maximumDistance);
                 int preferredDirection = transform.position.x <= chunkBounds.center.x ? -1 : 1;
-                if (TryMoveToEmptySpace(preferredDirection * distance, chunk) ||
-                    TryMoveToEmptySpace(-preferredDirection * distance, chunk))
+                if (TryMoveToEmptySpace(preferredDirection * distance) ||
+                    TryMoveToEmptySpace(-preferredDirection * distance))
                 {
                     lastEscapeTime = Time.time;
                     velocity.x = 0f;
@@ -104,7 +104,7 @@ namespace TerrainCollapsePrototype
             return false;
         }
 
-        private bool TryMoveToEmptySpace(float offsetX, FallingChunk sourceChunk)
+        private bool TryMoveToEmptySpace(float offsetX)
         {
             Vector2 candidateCenter = (Vector2)box.bounds.center + Vector2.right * offsetX;
             var filter = new ContactFilter2D

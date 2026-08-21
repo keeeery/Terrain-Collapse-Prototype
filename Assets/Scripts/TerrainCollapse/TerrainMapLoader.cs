@@ -20,6 +20,7 @@ namespace TerrainCollapsePrototype
         private void Awake()
         {
             if (targetWorld == null) targetWorld = GetComponent<TerrainGridWorld>();
+            
             if (mapJson == null)
             {
                 Debug.LogError("[Terrain Map Loader] Map JSON이 연결되지 않았습니다.");
@@ -27,13 +28,16 @@ namespace TerrainCollapsePrototype
             }
 
             LoadedMap = TerrainMapFile.FromJson(mapJson.text);
+            
             if (LoadedMap == null)
             {
                 Debug.LogError("[Terrain Map Loader] JSON 역직렬화에 실패했습니다.");
                 return;
             }
+            
             string validationError;
-            if (!LoadedMap.IsValid(out validationError))
+            
+            if (LoadedMap.IsValid(out validationError) == false)
             {
                 Debug.LogError($"[Terrain Map Loader] 맵 로드 실패: {validationError}");
                 return;

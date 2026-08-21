@@ -35,9 +35,16 @@ public static class TerrainCollapsePrototypeSceneBuilder
         TerrainSampler sampler = new GameObject("TerrainSampler").AddComponent<TerrainSampler>();
         sampler.transform.SetParent(managers.transform);
 
-        terrainManager.Configure(terrainWorld, collapseManager, camera, mapFile.FoundationCellY);
-        collapseManager.Configure(terrainManager, sampler);
         sampler.Configure(terrainWorld);
+        terrainManager.Configure(terrainWorld, camera, mapFile.FoundationCellY);
+        collapseManager.Configure(terrainWorld, sampler);
+
+        var coordinatorObject = new GameObject("TerrainCollapseCoordinator");
+        coordinatorObject.SetActive(false);
+        coordinatorObject.transform.SetParent(managers.transform);
+        TerrainCollapseCoordinator coordinator = coordinatorObject.AddComponent<TerrainCollapseCoordinator>();
+        coordinator.Configure(terrainManager, collapseManager);
+        coordinatorObject.SetActive(true);
         CreatePlayer(terrainSprite);
 
         EditorSceneManager.MarkSceneDirty(scene);
@@ -101,7 +108,7 @@ public static class TerrainCollapsePrototypeSceneBuilder
 
     private static Sprite CreateOrLoadSprite()
     {
-        if (!File.Exists(TexturePath))
+        if (File.Exists(TexturePath) == false)
         {
             var texture = new Texture2D(32, 32, TextureFormat.RGBA32, false);
             Color face = new(.37f, .69f, .35f, 1f);
@@ -112,7 +119,7 @@ public static class TerrainCollapsePrototypeSceneBuilder
             texture.SetPixels(pixels);
             texture.Apply();
             File.WriteAllBytes(TexturePath, texture.EncodeToPNG());
-            Object.DestroyImmediate(texture);
+            UnityEngine.Object.DestroyImmediate(texture);
             AssetDatabase.ImportAsset(TexturePath, ImportAssetOptions.ForceSynchronousImport);
         }
 
@@ -133,7 +140,7 @@ public static class TerrainCollapsePrototypeSceneBuilder
         for (int i = 1; i < parts.Length; i++)
         {
             string next = current + "/" + parts[i];
-            if (!AssetDatabase.IsValidFolder(next)) AssetDatabase.CreateFolder(current, parts[i]);
+            if (AssetDatabase.IsValidFolder(next) == false) AssetDatabase.CreateFolder(current, parts[i]);
             current = next;
         }
     }

@@ -16,8 +16,8 @@ namespace TerrainCollapsePrototype
         [SerializeField] private float cellSize = 1f;
         [SerializeField] private Sprite terrainSprite;
         [SerializeField] private Color terrainColor = Color.white;
+        
         private static readonly Vector2Int[] NoCells = new Vector2Int[0];
-
         private readonly Dictionary<Vector2Int, MeshFilter> chunkViews = new();
         private readonly HashSet<Vector2Int> dirtyChunks = new();
         private readonly List<GameObject> colliderSegments = new();
@@ -44,6 +44,7 @@ namespace TerrainCollapsePrototype
         private void Start()
         {
             if (data != null) return;
+            
             Debug.LogWarning("[Terrain Collapse] Map Loader가 없어 기본 데이터 맵을 생성합니다.", this);
             LoadMap(TerrainMapFactory.CreatePerformanceMap());
         }
@@ -52,12 +53,15 @@ namespace TerrainCollapsePrototype
         {
             Rigidbody2D body = GetComponent<Rigidbody2D>();
             body.bodyType = RigidbodyType2D.Static;
+            
             if (terrainMaterial != null) return;
+            
             if (terrainSprite == null)
             {
                 Debug.LogError("[Terrain Collapse] TerrainGridWorld에 Terrain Sprite가 지정되지 않았습니다.", this);
                 return;
             }
+            
             Shader spriteShader = Shader.Find("Sprites/Default");
             terrainMaterial = new Material(spriteShader) { mainTexture = terrainSprite.texture };
         }
@@ -70,12 +74,16 @@ namespace TerrainCollapsePrototype
             cellSize = map.CellSize;
             transform.position = map.Origin;
             data = new TerrainGridData(cellSize, map.Origin);
+
             for (int y = 0; y < map.Height; y++)
-            for (int x = 0; x < map.Width; x++)
             {
-                var coord = new Vector2Int(x, y);
-                TerrainTileType type = map.GetTile(coord);
-                if (type != TerrainTileType.Empty) data.SetCell(coord, type);
+                for (int x = 0; x < map.Width; x++)
+                {
+                    Vector2Int coord = new(x, y);
+                    TerrainTileType type = map.GetTile(coord);
+                    
+                    if (type != TerrainTileType.Empty) data.SetCell(coord, type);
+                }
             }
 
             BuildAllChunkMeshes();
@@ -88,18 +96,23 @@ namespace TerrainCollapsePrototype
             foreach (MeshFilter filter in chunkViews.Values)
             {
                 if (filter == null) continue;
+                
                 if (filter.sharedMesh != null) Destroy(filter.sharedMesh);
+                
                 Destroy(filter.gameObject);
             }
+            
             chunkViews.Clear();
             dirtyChunks.Clear();
 
             foreach (GameObject segment in colliderSegments)
             {
                 if (segment == null) continue;
+                
                 segment.GetComponent<EdgeCollider2D>().enabled = false;
                 Destroy(segment);
             }
+            
             colliderSegments.Clear();
             colliderDirty = false;
         }
@@ -112,7 +125,8 @@ namespace TerrainCollapsePrototype
                 dirtyChunks.Clear();
             }
 
-            if (!colliderDirty) return;
+            if (colliderDirty == false) return;
+            
             RebuildBoundaryCollider();
             colliderDirty = false;
         }
@@ -121,6 +135,7 @@ namespace TerrainCollapsePrototype
         {
             foreach (MeshFilter filter in chunkViews.Values)
                 if (filter != null && filter.sharedMesh != null) Destroy(filter.sharedMesh);
+            
             if (terrainMaterial != null) Destroy(terrainMaterial);
         }
 
@@ -136,14 +151,14 @@ namespace TerrainCollapsePrototype
 
         public bool SetCell(Vector2Int coord, TerrainTileType type)
         {
-            if (!data.SetCell(coord, type)) return false;
+            if (data.SetCell(coord, type) == false) return false;
             MarkCellDirty(coord);
             return true;
         }
 
         public bool RemoveCell(Vector2Int coord)
         {
-            if (!data.Remove(coord)) return false;
+            if (data.Remove(coord) == false) return false;
             MarkCellDirty(coord);
             return true;
         }
@@ -163,14 +178,18 @@ namespace TerrainCollapsePrototype
 
         private void RebuildChunkMesh(Vector2Int chunkCoord)
         {
-            var cells = new List<Vector2Int>();
+            List<Vector2Int> cells = new();
             int minX = chunkCoord.x * RenderChunkSize;
             int minY = chunkCoord.y * RenderChunkSize;
+
             for (int y = minY; y < minY + RenderChunkSize; y++)
-            for (int x = minX; x < minX + RenderChunkSize; x++)
             {
-                var coord = new Vector2Int(x, y);
-                if (data.IsOccupied(coord)) cells.Add(coord);
+                for (int x = minX; x < minX + RenderChunkSize; x++)
+                {
+                    Vector2Int coord = new(x, y);
+                    
+                    if (data.IsOccupied(coord)) cells.Add(coord);
+                }
             }
 
             if (cells.Count == 0)
@@ -180,14 +199,16 @@ namespace TerrainCollapsePrototype
                     if (emptyFilter.sharedMesh != null) Destroy(emptyFilter.sharedMesh);
                     Destroy(emptyFilter.gameObject);
                 }
+                
                 return;
             }
 
-            if (!chunkViews.TryGetValue(chunkCoord, out MeshFilter filter) || filter == null)
+            if (chunkViews.TryGetValue(chunkCoord, out MeshFilter filter) == false || filter == null)
             {
-                var view = new GameObject($"RenderChunk_{chunkCoord.x}_{chunkCoord.y}",
+                GameObject view = new($"RenderChunk_{chunkCoord.x}_{chunkCoord.y}",
                     typeof(MeshFilter), typeof(MeshRenderer));
                 view.transform.SetParent(transform, false);
+                
                 filter = view.GetComponent<MeshFilter>();
                 view.GetComponent<MeshRenderer>().sharedMaterial = terrainMaterial;
                 chunkViews[chunkCoord] = filter;
@@ -195,15 +216,16 @@ namespace TerrainCollapsePrototype
 
             Mesh previous = filter.sharedMesh;
             filter.sharedMesh = BuildMesh(cells, chunkCoord);
+            
             if (previous != null) Destroy(previous);
         }
 
         private Mesh BuildMesh(IReadOnlyList<Vector2Int> cells, Vector2Int chunkCoord)
         {
-            var vertices = new Vector3[cells.Count * 4];
-            var uv = new Vector2[cells.Count * 4];
-            var colors = new Color[cells.Count * 4];
-            var triangles = new int[cells.Count * 6];
+            Vector3[] vertices = new Vector3[cells.Count * 4];
+            Vector2[] uv = new Vector2[cells.Count * 4];
+            Color[] colors = new Color[cells.Count * 4];
+            int[] triangles = new int[cells.Count * 6];
             Rect textureRect = terrainSprite.textureRect;
             float uMin = textureRect.xMin / terrainSprite.texture.width;
             float uMax = textureRect.xMax / terrainSprite.texture.width;
@@ -235,18 +257,21 @@ namespace TerrainCollapsePrototype
                 triangles[triangle + 5] = vertex + 3;
             }
 
-            var mesh = new Mesh { name = $"TerrainChunk_{chunkCoord.x}_{chunkCoord.y}" };
+            Mesh mesh = new Mesh { name = $"TerrainChunk_{chunkCoord.x}_{chunkCoord.y}" };
+            
             if (vertices.Length > ushort.MaxValue) mesh.indexFormat = IndexFormat.UInt32;
+            
             mesh.vertices = vertices;
             mesh.uv = uv;
             mesh.colors = colors;
             mesh.triangles = triangles;
             mesh.RecalculateBounds();
             MeshFilter filter = chunkViews.TryGetValue(chunkCoord, out MeshFilter existing) ? existing : null;
+            
             if (filter != null) filter.transform.localPosition = new Vector3(
                 chunkCoord.x * RenderChunkSize * cellSize,
                 chunkCoord.y * RenderChunkSize * cellSize, 0f);
-            return mesh;
+                return mesh;
         }
 
         /// <summary>점유 셀과 빈 셀 사이의 경계만 추출하고, 같은 선상의 연속 구간을 하나로 합친다.</summary>
@@ -255,34 +280,39 @@ namespace TerrainCollapsePrototype
             foreach (GameObject segment in colliderSegments)
             {
                 if (segment == null) continue;
+                
                 segment.GetComponent<EdgeCollider2D>().enabled = false;
                 Destroy(segment);
             }
+            
             colliderSegments.Clear();
 
-            var horizontal = new Dictionary<int, SortedSet<int>>();
-            var vertical = new Dictionary<int, SortedSet<int>>();
+            Dictionary<int, SortedSet<int>> horizontal = new();
+            Dictionary<int, SortedSet<int>> vertical = new();
+            
             foreach (Vector2Int cell in data.OccupiedCoords)
             {
-                if (!data.IsOccupied(cell + Vector2Int.down)) AddEdge(horizontal, cell.y, cell.x);
-                if (!data.IsOccupied(cell + Vector2Int.up)) AddEdge(horizontal, cell.y + 1, cell.x);
-                if (!data.IsOccupied(cell + Vector2Int.left)) AddEdge(vertical, cell.x, cell.y);
-                if (!data.IsOccupied(cell + Vector2Int.right)) AddEdge(vertical, cell.x + 1, cell.y);
+                if (data.IsOccupied(cell + Vector2Int.down) == false) AddEdge(horizontal, cell.y, cell.x);
+                if (data.IsOccupied(cell + Vector2Int.up) == false) AddEdge(horizontal, cell.y + 1, cell.x);
+                if (data.IsOccupied(cell + Vector2Int.left) == false) AddEdge(vertical, cell.x, cell.y);
+                if (data.IsOccupied(cell + Vector2Int.right) == false) AddEdge(vertical, cell.x + 1, cell.y);
             }
 
             foreach ((int y, SortedSet<int> starts) in horizontal)
                 CreateMergedSegments(starts, true, y);
+            
             foreach ((int x, SortedSet<int> starts) in vertical)
                 CreateMergedSegments(starts, false, x);
         }
 
         private static void AddEdge(Dictionary<int, SortedSet<int>> lines, int line, int start)
         {
-            if (!lines.TryGetValue(line, out SortedSet<int> starts))
+            if (lines.TryGetValue(line, out SortedSet<int> starts) == false)
             {
                 starts = new SortedSet<int>();
                 lines.Add(line, starts);
             }
+            
             starts.Add(start);
         }
 
@@ -291,29 +321,39 @@ namespace TerrainCollapsePrototype
             int runStart = 0;
             int previous = 0;
             bool hasRun = false;
+            
             foreach (int value in starts)
             {
-                if (!hasRun)
+                if (hasRun == false)
                 {
                     runStart = previous = value;
                     hasRun = true;
                     continue;
                 }
-                if (value == previous + 1) { previous = value; continue; }
+
+                if (value == previous + 1)
+                {
+                    previous = value; 
+                    continue;
+                }
+                
                 CreateColliderSegment(horizontal, fixedAxis, runStart, previous + 1);
                 runStart = previous = value;
             }
+            
             if (hasRun) CreateColliderSegment(horizontal, fixedAxis, runStart, previous + 1);
         }
 
         private void CreateColliderSegment(bool horizontal, int fixedAxis, int start, int end)
         {
-            var segment = new GameObject("Boundary", typeof(EdgeCollider2D));
+            GameObject segment = new("Boundary", typeof(EdgeCollider2D));
             segment.transform.SetParent(transform, false);
+            
             EdgeCollider2D edge = segment.GetComponent<EdgeCollider2D>();
             edge.points = horizontal
                 ? new[] { new Vector2(start * cellSize, fixedAxis * cellSize), new Vector2(end * cellSize, fixedAxis * cellSize) }
                 : new[] { new Vector2(fixedAxis * cellSize, start * cellSize), new Vector2(fixedAxis * cellSize, end * cellSize) };
+            
             colliderSegments.Add(segment);
         }
 

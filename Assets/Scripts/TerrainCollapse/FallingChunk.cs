@@ -3,6 +3,11 @@ using UnityEngine;
 
 namespace TerrainCollapsePrototype
 {
+    public interface IFallingTerrainEscapeTarget
+    {
+        bool TryEscapeFromFallingTerrain(Bounds terrainBounds, float terrainCellSize);
+    }
+
     /// <summary>커스텀 Grid 셀 묶음의 물리 낙하와 안정화 상태를 관리한다.</summary>
     [RequireComponent(typeof(Rigidbody2D), typeof(CompositeCollider2D))]
     public sealed class FallingChunk : MonoBehaviour
@@ -66,7 +71,7 @@ namespace TerrainCollapsePrototype
 
         private void OnDestroy()
         {
-            if (frictionlessMaterial != null) Destroy(frictionlessMaterial);
+            Destroy(frictionlessMaterial);
         }
 
         private void FixedUpdate()
@@ -78,16 +83,19 @@ namespace TerrainCollapsePrototype
             bool slow = body.IsSleeping() ||
                         (body.linearVelocity.sqrMagnitude <= linearVelocityThreshold * linearVelocityThreshold &&
                          Mathf.Abs(body.angularVelocity) <= angularVelocityThreshold);
+            
             stableTime = recentGround && slow
                 ? stableTime + Time.fixedDeltaTime
                 : Mathf.Max(0f, stableTime - Time.fixedDeltaTime);
 
             if (hasTouchedGround) timeSinceFirstGroundContact += Time.fixedDeltaTime;
+            
             bool forceSettled = hasTouchedGround && recentGround &&
                                 timeSinceFirstGroundContact >= maximumSettleWait &&
                                 body.linearVelocity.sqrMagnitude <=
                                 forcedSettleVelocityThreshold * forcedSettleVelocityThreshold;
-            if (stableTime < settleDuration && !forceSettled) return;
+            
+            if (stableTime < settleDuration && forceSettled == false) return;
 
             settled = true;
             body.linearVelocity = Vector2.zero;
@@ -102,7 +110,17 @@ namespace TerrainCollapsePrototype
 
         private void HandleCollision(Collision2D collision)
         {
-            collision.collider.GetComponent<TestPlayerController>()?.TryEscapeFromFallingChunk(this);
+            MonoBehaviour[] behaviours = collision.collider.GetComponents<MonoBehaviour>();
+            
+            foreach (MonoBehaviour behaviour in behaviours)
+            {
+                if (behaviour is IFallingTerrainEscapeTarget target)
+                {
+                    target.TryEscapeFromFallingTerrain(WorldBounds, CellSize);
+                    break;
+                }
+            }
+            
             UpdateGroundContact(collision);
         }
 
@@ -113,16 +131,20 @@ namespace TerrainCollapsePrototype
             int supportingContactCount = 0;
             float minX = float.PositiveInfinity;
             float maxX = float.NegativeInfinity;
+            
             for (int i = 0; staticSurface && i < collision.contactCount; i++)
             {
                 ContactPoint2D contact = collision.GetContact(i);
+                
                 if (contact.normal.y < minimumSupportingNormalY) continue;
+                
                 supportingContactCount++;
                 minX = Mathf.Min(minX, contact.point.x);
                 maxX = Mathf.Max(maxX, contact.point.x);
             }
 
             bool supportingSurface = supportingContactCount >= 2 && maxX - minX >= minimumSupportContactWidth;
+            
             if (staticSurface && supportingSurface)
             {
                 groundContacts.Add(collision.collider);

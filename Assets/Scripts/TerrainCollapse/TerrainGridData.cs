@@ -3,10 +3,7 @@ using UnityEngine;
 
 namespace TerrainCollapsePrototype
 {
-    /// <summary>
-    /// Unity Tilemap과 무관한 지형 원본 데이터. 빈 공간을 저장하지 않는 Sparse Grid이다.
-    /// Mini Farm의 FarmGrid와 동일하게 좌표 변환과 Cell 접근을 한 곳에서 담당한다.
-    /// </summary>
+    /// <summary> 지형 원본 데이터, 빈 공간을 저장하지 않는 Sparse Grid이다.</summary>
     public sealed class TerrainGridData
     {
         private readonly Dictionary<Vector2Int, TerrainCell> cells = new();
@@ -29,13 +26,17 @@ namespace TerrainCollapsePrototype
         public bool SetCell(Vector2Int coord, TerrainTileType type)
         {
             if (type == TerrainTileType.Empty) return Remove(coord);
+            
             if (cells.TryGetValue(coord, out TerrainCell existing))
             {
                 if (existing.Type == type) return false;
+                
                 existing.ChangeType(type);
                 return true;
             }
+            
             cells.Add(coord, new TerrainCell(coord, type));
+            
             return true;
         }
 
@@ -49,6 +50,7 @@ namespace TerrainCollapsePrototype
         {
             int x = Mathf.FloorToInt((worldPosition.x - Origin.x) / CellSize);
             int y = Mathf.FloorToInt((worldPosition.y - Origin.y) / CellSize);
+            
             return new Vector2Int(x, y);
         }
 
