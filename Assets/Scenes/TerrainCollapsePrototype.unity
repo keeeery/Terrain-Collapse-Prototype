@@ -414,12 +414,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TerrainCollapsePrototype.TestPlayerController
   moveSpeed: 6
-  jumpImpulse: 8
-  groundMask:
+  jumpSpeed: 8
+  gravity: 24
+  collisionSkin: 0.02
+  escapeProbeStep: 0.05
+  collisionMask:
     serializedVersion: 2
     m_Bits: 4294967295
---- !u!70 &1173996064
-CapsuleCollider2D:
+--- !u!61 &1173996064
+BoxCollider2D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -454,7 +457,6 @@ CapsuleCollider2D:
   m_CompositeOrder: 0
   m_Offset: {x: 0, y: 0}
   m_Size: {x: 0.5, y: 1}
-  m_Direction: 0
 --- !u!50 &1173996065
 Rigidbody2D:
   serializedVersion: 5
@@ -463,14 +465,14 @@ Rigidbody2D:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1173996062}
-  m_BodyType: 0
+  m_BodyType: 1
   m_Simulated: 1
-  m_UseFullKinematicContacts: 0
+  m_UseFullKinematicContacts: 1
   m_UseAutoMass: 0
   m_Mass: 1
   m_LinearDamping: 0
   m_AngularDamping: 0.05
-  m_GravityScale: 1
+  m_GravityScale: 0
   m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2

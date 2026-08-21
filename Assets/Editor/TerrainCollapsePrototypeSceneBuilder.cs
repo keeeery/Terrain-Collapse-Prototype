@@ -84,7 +84,7 @@ public static class TerrainCollapsePrototypeSceneBuilder
     private static void CreatePlayer(Sprite sprite)
     {
         var player = new GameObject("Player", typeof(SpriteRenderer), typeof(Rigidbody2D),
-            typeof(CapsuleCollider2D), typeof(TestPlayerController));
+            typeof(BoxCollider2D), typeof(TestPlayerController));
         player.transform.position = new Vector3(-7f, 2f, 0f);
         player.transform.localScale = new Vector3(.75f, 1.5f, 1f);
         SpriteRenderer renderer = player.GetComponent<SpriteRenderer>();
@@ -92,6 +92,9 @@ public static class TerrainCollapsePrototypeSceneBuilder
         renderer.color = new Color(.25f, .8f, 1f);
         renderer.sortingOrder = 5;
         Rigidbody2D body = player.GetComponent<Rigidbody2D>();
+        body.bodyType = RigidbodyType2D.Kinematic;
+        body.useFullKinematicContacts = true;
+        body.gravityScale = 0f;
         body.freezeRotation = true;
         body.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
     }

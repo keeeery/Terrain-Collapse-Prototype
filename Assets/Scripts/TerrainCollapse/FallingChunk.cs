@@ -34,6 +34,7 @@ namespace TerrainCollapsePrototype
         public IReadOnlyList<TerrainTileType> CellTypes => cellTypes;
         public Collider2D ShapeCollider => compositeCollider;
         public Bounds WorldBounds => compositeCollider.bounds;
+        public float CellSize => cellSize;
 
         private void Awake()
         {
@@ -96,8 +97,14 @@ namespace TerrainCollapsePrototype
                       (forceSettled ? " (contact timeout fallback)" : string.Empty));
         }
 
-        private void OnCollisionEnter2D(Collision2D collision) => UpdateGroundContact(collision);
-        private void OnCollisionStay2D(Collision2D collision) => UpdateGroundContact(collision);
+        private void OnCollisionEnter2D(Collision2D collision) => HandleCollision(collision);
+        private void OnCollisionStay2D(Collision2D collision) => HandleCollision(collision);
+
+        private void HandleCollision(Collision2D collision)
+        {
+            collision.collider.GetComponent<TestPlayerController>()?.TryEscapeFromFallingChunk(this);
+            UpdateGroundContact(collision);
+        }
 
         private void UpdateGroundContact(Collision2D collision)
         {
