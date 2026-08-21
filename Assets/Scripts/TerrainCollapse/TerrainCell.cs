@@ -5,7 +5,12 @@ namespace TerrainCollapsePrototype
     public enum TerrainTileType
     {
         Empty = 0,
-        Ground = 1
+        Ground = 1,
+        Dirt = 2,
+        Stone = 3,
+        Bedrock = 4,
+        CoalOre = 10,
+        IronOre = 11
     }
 
     /// <summary>커스텀 지형 Grid의 한 칸이 보관하는 순수 런타임 데이터.</summary>

@@ -13,7 +13,6 @@ namespace TerrainCollapsePrototype
     {
         [SerializeField] private TerrainGridWorld terrainWorld;
         [SerializeField] private Camera inputCamera;
-        [SerializeField] private int supportCellY;
         [SerializeField] private bool logEvents = true;
 
         private InputAction removeTileAction;
@@ -26,11 +25,10 @@ namespace TerrainCollapsePrototype
         public TerrainGridWorld TerrainWorld => terrainWorld;
         public event Action TerrainChanged;
 
-        public void Configure(TerrainGridWorld world, Camera camera, int foundationCellY)
+        public void Configure(TerrainGridWorld world, Camera camera)
         {
             terrainWorld = world;
             inputCamera = camera;
-            supportCellY = foundationCellY;
         }
 
         private void OnEnable()
@@ -64,6 +62,8 @@ namespace TerrainCollapsePrototype
 
         public bool RemoveCell(Vector2Int cell)
         {
+            TerrainCell terrainCell = terrainWorld.Data.GetCellOrNull(cell);
+            if (terrainCell != null && terrainCell.Type == TerrainTileType.Bedrock) return false;
             if (terrainWorld.RemoveCell(cell) == false) return false;
             if (logEvents) Debug.Log($"[Terrain Collapse] Cell Destroy: {cell}");
 
@@ -71,7 +71,7 @@ namespace TerrainCollapsePrototype
             return true;
         }
 
-        /// <summary>점유 셀을 BFS로 순회하고 최하단 기반 행에 닿지 않은 그룹을 분리한다.</summary>
+        /// <summary>점유 셀을 BFS로 순회하고 기반암과 연결되지 않은 그룹을 분리한다.</summary>
         public List<List<Vector2Int>> FindFloatingGroups()
         {
             List<Vector2Int> occupiedSnapshot = new(terrainWorld.GetOccupiedCells());
@@ -92,7 +92,7 @@ namespace TerrainCollapsePrototype
                 {
                     Vector2Int cell = queue.Dequeue();
                     group.Add(cell);
-                    supported |= cell.y <= supportCellY;
+                    supported |= terrainWorld.Data.GetCellOrNull(cell).Type == TerrainTileType.Bedrock;
 
                     foreach (Vector2Int direction in Directions)
                     {

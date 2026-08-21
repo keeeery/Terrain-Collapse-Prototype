@@ -12,6 +12,7 @@ public static class TerrainCollapsePrototypeSceneBuilder
     private const string GeneratedFolder = "Assets/TerrainCollapseGenerated";
     private const string TexturePath = GeneratedFolder + "/PrototypeTile.png";
     private const string MapJsonPath = GeneratedFolder + "/PerformanceMap.json";
+    private const string TileCatalogPath = GeneratedFolder + "/TerrainTileCatalog.asset";
 
     [MenuItem("Tools/Prototype/Build Terrain Collapse Test Scene")]
     public static void BuildScene()
@@ -19,13 +20,14 @@ public static class TerrainCollapsePrototypeSceneBuilder
         EnsureFolder(GeneratedFolder);
         Sprite terrainSprite = CreateOrLoadSprite();
         if (terrainSprite == null) throw new InvalidDataException("Prototype Sprite를 불러오지 못했습니다.");
+        TerrainTileCatalog tileCatalog = CreateOrLoadTileCatalog(terrainSprite);
         TerrainMapFile mapFile = TerrainMapFactory.CreatePerformanceMap();
         TextAsset mapJson = SaveAndLoadMapAsset(mapFile);
 
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         scene.name = "TerrainCollapsePrototype";
         CreateCamera(out Camera camera);
-        TerrainGridWorld terrainWorld = CreateTerrainWorld(terrainSprite, mapJson);
+        TerrainGridWorld terrainWorld = CreateTerrainWorld(terrainSprite, tileCatalog, mapJson);
 
         var managers = new GameObject("Managers");
         TerrainManager terrainManager = new GameObject("TerrainManager").AddComponent<TerrainManager>();
@@ -34,10 +36,13 @@ public static class TerrainCollapsePrototypeSceneBuilder
         collapseManager.transform.SetParent(managers.transform);
         TerrainSampler sampler = new GameObject("TerrainSampler").AddComponent<TerrainSampler>();
         sampler.transform.SetParent(managers.transform);
+        TerrainMapBuilder mapBuilder = new GameObject("TerrainMapBuilder").AddComponent<TerrainMapBuilder>();
+        mapBuilder.transform.SetParent(managers.transform);
 
         sampler.Configure(terrainWorld);
-        terrainManager.Configure(terrainWorld, camera, mapFile.FoundationCellY);
+        terrainManager.Configure(terrainWorld, camera);
         collapseManager.Configure(terrainWorld, sampler);
+        mapBuilder.Configure(terrainWorld, terrainManager, camera);
 
         var coordinatorObject = new GameObject("TerrainCollapseCoordinator");
         coordinatorObject.SetActive(false);
@@ -54,16 +59,49 @@ public static class TerrainCollapsePrototypeSceneBuilder
         Debug.Log($"[Terrain Collapse] Custom Grid test scene saved: {ScenePath}");
     }
 
-    private static TerrainGridWorld CreateTerrainWorld(Sprite sprite, TextAsset mapJson)
+    private static TerrainGridWorld CreateTerrainWorld(
+        Sprite sprite,
+        TerrainTileCatalog tileCatalog,
+        TextAsset mapJson)
     {
         var root = new GameObject("TerrainGrid", typeof(Rigidbody2D),
             typeof(TerrainGridWorld), typeof(TerrainMapLoader));
         root.GetComponent<Rigidbody2D>().bodyType = RigidbodyType2D.Static;
         TerrainGridWorld world = root.GetComponent<TerrainGridWorld>();
-        world.ConfigureVisual(sprite, Color.white);
+        world.ConfigureVisual(sprite, Color.white, tileCatalog);
         root.GetComponent<TerrainMapLoader>().Configure(mapJson, world);
         EditorUtility.SetDirty(world);
         return world;
+    }
+
+    private static TerrainTileCatalog CreateOrLoadTileCatalog(Sprite terrainSprite)
+    {
+        TerrainTileCatalog catalog = AssetDatabase.LoadAssetAtPath<TerrainTileCatalog>(TileCatalogPath);
+        if (catalog == null)
+        {
+            catalog = ScriptableObject.CreateInstance<TerrainTileCatalog>();
+            AssetDatabase.CreateAsset(catalog, TileCatalogPath);
+        }
+
+        catalog.Configure(new[]
+        {
+            new TerrainTileDefinition
+            {
+                Type = TerrainTileType.Ground,
+                Sprite = terrainSprite,
+                Color = Color.white,
+                CreatesCollider = true
+            },
+            new TerrainTileDefinition
+            {
+                Type = TerrainTileType.Bedrock,
+                Sprite = terrainSprite,
+                Color = new Color(0.3f, 0.3f, 0.35f),
+                CreatesCollider = true
+            }
+        });
+        EditorUtility.SetDirty(catalog);
+        return catalog;
     }
 
     private static TextAsset SaveAndLoadMapAsset(TerrainMapFile map)
@@ -98,6 +136,7 @@ public static class TerrainCollapsePrototypeSceneBuilder
         renderer.sprite = sprite;
         renderer.color = new Color(.25f, .8f, 1f);
         renderer.sortingOrder = 5;
+        player.GetComponent<BoxCollider2D>().size = Vector2.one;
         Rigidbody2D body = player.GetComponent<Rigidbody2D>();
         body.bodyType = RigidbodyType2D.Kinematic;
         body.useFullKinematicContacts = true;

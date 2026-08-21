@@ -16,6 +16,7 @@ namespace TerrainCollapsePrototype
         [SerializeField] private float cellSize = 1f;
         [SerializeField] private Sprite terrainSprite;
         [SerializeField] private Color terrainColor = Color.white;
+        [SerializeField] private TerrainTileCatalog tileCatalog;
         
         private static readonly Vector2Int[] NoCells = new Vector2Int[0];
         private readonly Dictionary<Vector2Int, MeshFilter> chunkViews = new();
@@ -30,11 +31,21 @@ namespace TerrainCollapsePrototype
         public Sprite TerrainSprite => terrainSprite;
         public Color TerrainColor => terrainColor;
 
-        public void ConfigureVisual(Sprite sprite, Color color)
+        public void ConfigureVisual(Sprite sprite, Color color, TerrainTileCatalog catalog = null)
         {
             terrainSprite = sprite;
             terrainColor = color;
+            tileCatalog = catalog;
         }
+
+        public Sprite GetTileSprite(TerrainTileType type)
+            => tileCatalog?.Get(type)?.Sprite ?? terrainSprite;
+
+        public Color GetTileColor(TerrainTileType type)
+            => tileCatalog?.Get(type)?.Color ?? terrainColor;
+
+        public bool TileCreatesCollider(TerrainTileType type)
+            => tileCatalog?.Get(type)?.CreatesCollider ?? true;
 
         private void Awake()
         {
@@ -226,16 +237,19 @@ namespace TerrainCollapsePrototype
             Vector2[] uv = new Vector2[cells.Count * 4];
             Color[] colors = new Color[cells.Count * 4];
             int[] triangles = new int[cells.Count * 6];
-            Rect textureRect = terrainSprite.textureRect;
-            float uMin = textureRect.xMin / terrainSprite.texture.width;
-            float uMax = textureRect.xMax / terrainSprite.texture.width;
-            float vMin = textureRect.yMin / terrainSprite.texture.height;
-            float vMax = textureRect.yMax / terrainSprite.texture.height;
             Vector2Int chunkOrigin = chunkCoord * RenderChunkSize;
 
             for (int i = 0; i < cells.Count; i++)
             {
                 Vector2Int local = cells[i] - chunkOrigin;
+                TerrainTileType type = data.GetCellOrNull(cells[i]).Type;
+                Sprite sprite = GetTileSprite(type);
+                Color color = GetTileColor(type);
+                Rect textureRect = sprite.textureRect;
+                float uMin = textureRect.xMin / sprite.texture.width;
+                float uMax = textureRect.xMax / sprite.texture.width;
+                float vMin = textureRect.yMin / sprite.texture.height;
+                float vMax = textureRect.yMax / sprite.texture.height;
                 float x = local.x * cellSize;
                 float y = local.y * cellSize;
                 int vertex = i * 4;
@@ -247,7 +261,7 @@ namespace TerrainCollapsePrototype
                 uv[vertex + 1] = new Vector2(uMin, vMax);
                 uv[vertex + 2] = new Vector2(uMax, vMax);
                 uv[vertex + 3] = new Vector2(uMax, vMin);
-                colors[vertex] = colors[vertex + 1] = colors[vertex + 2] = colors[vertex + 3] = terrainColor;
+                colors[vertex] = colors[vertex + 1] = colors[vertex + 2] = colors[vertex + 3] = color;
                 int triangle = i * 6;
                 triangles[triangle] = vertex;
                 triangles[triangle + 1] = vertex + 1;
@@ -292,10 +306,12 @@ namespace TerrainCollapsePrototype
             
             foreach (Vector2Int cell in data.OccupiedCoords)
             {
-                if (data.IsOccupied(cell + Vector2Int.down) == false) AddEdge(horizontal, cell.y, cell.x);
-                if (data.IsOccupied(cell + Vector2Int.up) == false) AddEdge(horizontal, cell.y + 1, cell.x);
-                if (data.IsOccupied(cell + Vector2Int.left) == false) AddEdge(vertical, cell.x, cell.y);
-                if (data.IsOccupied(cell + Vector2Int.right) == false) AddEdge(vertical, cell.x + 1, cell.y);
+                TerrainTileType type = data.GetCellOrNull(cell).Type;
+                if (TileCreatesCollider(type) == false) continue;
+                if (HasCollidableCell(cell + Vector2Int.down) == false) AddEdge(horizontal, cell.y, cell.x);
+                if (HasCollidableCell(cell + Vector2Int.up) == false) AddEdge(horizontal, cell.y + 1, cell.x);
+                if (HasCollidableCell(cell + Vector2Int.left) == false) AddEdge(vertical, cell.x, cell.y);
+                if (HasCollidableCell(cell + Vector2Int.right) == false) AddEdge(vertical, cell.x + 1, cell.y);
             }
 
             foreach ((int y, SortedSet<int> starts) in horizontal)
@@ -303,6 +319,12 @@ namespace TerrainCollapsePrototype
             
             foreach ((int x, SortedSet<int> starts) in vertical)
                 CreateMergedSegments(starts, false, x);
+        }
+
+        private bool HasCollidableCell(Vector2Int coord)
+        {
+            TerrainCell cell = data.GetCellOrNull(coord);
+            return cell != null && TileCreatesCollider(cell.Type);
         }
 
         private static void AddEdge(Dictionary<int, SortedSet<int>> lines, int line, int start)
