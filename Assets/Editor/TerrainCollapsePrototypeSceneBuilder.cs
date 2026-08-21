@@ -1,42 +1,32 @@
 using System.IO;
-using System.Collections.Generic;
 using TerrainCollapsePrototype;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using UnityEngine.Tilemaps;
 
-/// <summary>
-/// 기술 검증에 필요한 Tile 자산, 테스트 맵, Manager, Camera, Player를 한 번에 생성한다.
-/// 생성된 모든 참조는 코드에서 연결하므로 Inspector Drag &amp; Drop이 필요 없다.
-/// </summary>
+/// <summary>Unity Tilemap 없이 커스텀 Grid 기반 붕괴 테스트 Scene을 자동 생성한다.</summary>
 public static class TerrainCollapsePrototypeSceneBuilder
 {
     private const string ScenePath = "Assets/Scenes/TerrainCollapsePrototype.unity";
     private const string GeneratedFolder = "Assets/TerrainCollapseGenerated";
     private const string TexturePath = GeneratedFolder + "/PrototypeTile.png";
-    private const string TilePath = GeneratedFolder + "/PrototypeTile.asset";
-    private const int PerformanceMapWidth = 100;
-    private const int PerformanceMapDepth = 100;
-    private const int PerformanceMapMinimumY = -(PerformanceMapDepth - 1);
+    private const string MapJsonPath = GeneratedFolder + "/PerformanceMap.json";
 
-    /// <summary>빈 Scene을 만들고 프로토타입 전체 구성을 저장한다.</summary>
     [MenuItem("Tools/Prototype/Build Terrain Collapse Test Scene")]
     public static void BuildScene()
     {
         EnsureFolder(GeneratedFolder);
-        Tile tile = CreateOrLoadTile();
-        if (tile == null || tile.sprite == null)
-            throw new InvalidDataException("Prototype Tile 또는 Sprite를 불러오지 못했습니다.");
+        Sprite terrainSprite = CreateOrLoadSprite();
+        if (terrainSprite == null) throw new InvalidDataException("Prototype Sprite를 불러오지 못했습니다.");
+        TerrainMapFile mapFile = TerrainMapFactory.CreatePerformanceMap();
+        TextAsset mapJson = SaveAndLoadMapAsset(mapFile);
 
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         scene.name = "TerrainCollapsePrototype";
-
         CreateCamera(out Camera camera);
-        Tilemap ground = CreateTerrain(tile);
+        TerrainGridWorld terrainWorld = CreateTerrainWorld(terrainSprite, mapJson);
 
-        // 런타임 역할별 Manager를 분리하고 서로 필요한 참조만 연결한다.
         var managers = new GameObject("Managers");
         TerrainManager terrainManager = new GameObject("TerrainManager").AddComponent<TerrainManager>();
         terrainManager.transform.SetParent(managers.transform);
@@ -45,77 +35,38 @@ public static class TerrainCollapsePrototypeSceneBuilder
         TerrainSampler sampler = new GameObject("TerrainSampler").AddComponent<TerrainSampler>();
         sampler.transform.SetParent(managers.transform);
 
-        // 최하단 행만 절대 기반이다. 그 위의 대형 지형도 연결이 끊기면 붕괴 대상으로 처리한다.
-        terrainManager.Configure(ground, tile, collapseManager, camera, PerformanceMapMinimumY);
+        terrainManager.Configure(terrainWorld, collapseManager, camera, mapFile.FoundationCellY);
         collapseManager.Configure(terrainManager, sampler);
-        sampler.Configure(ground, tile);
-        CreatePlayer(tile.sprite);
+        sampler.Configure(terrainWorld);
+        CreatePlayer(terrainSprite);
 
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene, ScenePath);
-        Selection.activeGameObject = ground.gameObject;
+        Selection.activeGameObject = terrainWorld.gameObject;
         AssetDatabase.SaveAssets();
-        Debug.Log($"[Terrain Collapse] Test scene built and saved: {ScenePath}");
+        Debug.Log($"[Terrain Collapse] Custom Grid test scene saved: {ScenePath}");
     }
 
-    private static Tilemap CreateTerrain(Tile tile)
+    private static TerrainGridWorld CreateTerrainWorld(Sprite sprite, TextAsset mapJson)
     {
-        // GroundTilemap Collider들은 CompositeCollider2D로 합쳐 경계 사이의 불필요한 충돌을 줄인다.
-        var gridObject = new GameObject("Grid", typeof(Grid));
-        Grid grid = gridObject.GetComponent<Grid>();
-        grid.cellSize = Vector3.one;
-
-        var groundObject = new GameObject("GroundTilemap", typeof(Tilemap), typeof(TilemapRenderer),
-            typeof(Rigidbody2D), typeof(TilemapCollider2D), typeof(CompositeCollider2D));
-        groundObject.transform.SetParent(gridObject.transform, false);
-        Rigidbody2D body = groundObject.GetComponent<Rigidbody2D>();
-        body.bodyType = RigidbodyType2D.Static;
-        TilemapCollider2D tileCollider = groundObject.GetComponent<TilemapCollider2D>();
-        tileCollider.compositeOperation = Collider2D.CompositeOperation.Merge;
-        // 대량 편집 시 작은 변경을 지나치게 오래 누적하지 않고 전체 재생성과 비교할 기준값이다.
-        tileCollider.maximumTileChangeCount = 1024;
-        CompositeCollider2D composite = groundObject.GetComponent<CompositeCollider2D>();
-        composite.geometryType = CompositeCollider2D.GeometryType.Polygons;
-
-        Tilemap map = groundObject.GetComponent<Tilemap>();
-        // 성능 측정용 1024x64 밀집 지형 위에 기존 붕괴 테스트 구조를 유지한다.
-        // 크기를 더 키우려면 PerformanceMapWidth/Depth 상수만 변경하면 된다.
-        int denseTerrainTileCount = PerformanceMapWidth * PerformanceMapDepth;
-        const int collapseStructureTileCount = 20;
-        var cells = new List<Vector3Int>(denseTerrainTileCount + collapseStructureTileCount);
-        int minimumX = -PerformanceMapWidth / 2;
-        int maximumX = minimumX + PerformanceMapWidth;
-        for (int y = PerformanceMapMinimumY; y <= 0; y++)
-        for (int x = minimumX; x < maximumX; x++)
-            cells.Add(new Vector3Int(x, y, 0));
-
-        // 상부 플랫폼 7x2칸과 중앙 지지대 2x3칸은 화면 중앙에 생성한다.
-        for (int y = 4; y <= 5; y++)
-        for (int x = -4; x <= 2; x++) cells.Add(new Vector3Int(x, y, 0));
-        for (int y = 1; y <= 3; y++)
-        for (int x = -1; x <= 0; x++) cells.Add(new Vector3Int(x, y, 0));
-
-        var tiles = new TileBase[cells.Count];
-        for (int i = 0; i < tiles.Length; i++) tiles[i] = tile;
-        map.SetTiles(cells.ToArray(), tiles);
-        map.CompressBounds();
-        map.RefreshAllTiles();
-        EditorUtility.SetDirty(map);
-
-        // 성공 로그 전에 직렬화 대상 Tilemap에 모든 셀이 실제로 들어갔는지 검증한다.
-        if (map.GetUsedTilesCount() != 1 || CountOccupiedCells(map) != cells.Count)
-            throw new InvalidDataException($"GroundTilemap 생성 검증 실패: 기대 {cells.Count}개 타일.");
-        Debug.Log($"[Terrain Collapse] Performance map created: {PerformanceMapWidth}x{PerformanceMapDepth}, " +
-                  $"total tiles={cells.Count:N0}");
-        return map;
+        var root = new GameObject("TerrainGrid", typeof(Rigidbody2D),
+            typeof(TerrainGridWorld), typeof(TerrainMapLoader));
+        root.GetComponent<Rigidbody2D>().bodyType = RigidbodyType2D.Static;
+        TerrainGridWorld world = root.GetComponent<TerrainGridWorld>();
+        world.ConfigureVisual(sprite, Color.white);
+        root.GetComponent<TerrainMapLoader>().Configure(mapJson, world);
+        EditorUtility.SetDirty(world);
+        return world;
     }
 
-    private static int CountOccupiedCells(Tilemap map)
+    private static TextAsset SaveAndLoadMapAsset(TerrainMapFile map)
     {
-        int count = 0;
-        foreach (Vector3Int cell in map.cellBounds.allPositionsWithin)
-            if (map.HasTile(cell)) count++;
-        return count;
+        File.WriteAllText(MapJsonPath, map.ToJson());
+        AssetDatabase.ImportAsset(MapJsonPath, ImportAssetOptions.ForceSynchronousImport);
+        TextAsset asset = AssetDatabase.LoadAssetAtPath<TextAsset>(MapJsonPath);
+        if (asset == null) throw new InvalidDataException($"Map JSON Asset 생성 실패: {MapJsonPath}");
+        Debug.Log($"[Terrain Collapse] Data map generated: {MapJsonPath} ({map.Width}x{map.Height})");
+        return asset;
     }
 
     private static void CreateCamera(out Camera camera)
@@ -143,21 +94,15 @@ public static class TerrainCollapsePrototypeSceneBuilder
         Rigidbody2D body = player.GetComponent<Rigidbody2D>();
         body.freezeRotation = true;
         body.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
-        CapsuleCollider2D capsule = player.GetComponent<CapsuleCollider2D>();
-        capsule.size = Vector2.one;
     }
 
-    private static Tile CreateOrLoadTile()
+    private static Sprite CreateOrLoadSprite()
     {
-        Tile existing = AssetDatabase.LoadAssetAtPath<Tile>(TilePath);
-        if (existing != null) return existing;
-
         if (!File.Exists(TexturePath))
         {
-            // 외부 이미지 없이도 실행되도록 32x32 테스트 Sprite를 코드로 생성한다.
             var texture = new Texture2D(32, 32, TextureFormat.RGBA32, false);
-            Color face = new Color(.37f, .69f, .35f, 1f);
-            Color edge = new Color(.22f, .42f, .2f, 1f);
+            Color face = new(.37f, .69f, .35f, 1f);
+            Color edge = new(.22f, .42f, .2f, 1f);
             var pixels = new Color[32 * 32];
             for (int y = 0; y < 32; y++)
             for (int x = 0; x < 32; x++) pixels[y * 32 + x] = x < 2 || y < 2 ? edge : face;
@@ -168,27 +113,18 @@ public static class TerrainCollapsePrototypeSceneBuilder
             AssetDatabase.ImportAsset(TexturePath, ImportAssetOptions.ForceSynchronousImport);
         }
 
-        // 한 셀이 정확히 1 Unity Unit이 되도록 32 PPU Point Sprite로 임포트한다.
         var importer = (TextureImporter)AssetImporter.GetAtPath(TexturePath);
         importer.textureType = TextureImporterType.Sprite;
+        importer.spriteImportMode = SpriteImportMode.Single;
         importer.spritePixelsPerUnit = 32f;
         importer.filterMode = FilterMode.Point;
         importer.textureCompression = TextureImporterCompression.Uncompressed;
         importer.SaveAndReimport();
-
-        var tile = ScriptableObject.CreateInstance<Tile>();
-        tile.sprite = AssetDatabase.LoadAssetAtPath<Sprite>(TexturePath);
-        tile.colliderType = Tile.ColliderType.Sprite;
-        AssetDatabase.CreateAsset(tile, TilePath);
-        EditorUtility.SetDirty(tile);
-        AssetDatabase.SaveAssets();
-        AssetDatabase.ImportAsset(TilePath, ImportAssetOptions.ForceSynchronousImport);
-        return AssetDatabase.LoadAssetAtPath<Tile>(TilePath);
+        return AssetDatabase.LoadAssetAtPath<Sprite>(TexturePath);
     }
 
     private static void EnsureFolder(string path)
     {
-        // AssetDatabase.CreateFolder는 한 단계씩만 만들 수 있으므로 경로를 순차 생성한다.
         string[] parts = path.Split('/');
         string current = parts[0];
         for (int i = 1; i < parts.Length; i++)
